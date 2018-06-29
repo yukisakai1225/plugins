@@ -178,10 +178,20 @@ public class CameraPlugin implements MethodCallHandler {
         {
           String cameraName = call.argument("cameraName");
           String resolutionPreset = call.argument("resolutionPreset");
+          int videoEncodingBitRate = call.argument("videoEncodingBitRate");
+          int videoFrameRate = call.argument("videoFrameRate");
+          int audioSamplingRate = call.argument("audioSamplingRate");
           if (camera != null) {
             camera.close();
           }
-          camera = new Camera(cameraName, resolutionPreset, result);
+          camera =
+              new Camera(
+                  cameraName,
+                  resolutionPreset,
+                  videoEncodingBitRate,
+                  videoFrameRate,
+                  audioSamplingRate,
+                  result);
           break;
         }
       case "takePicture":
@@ -249,6 +259,9 @@ public class CameraPlugin implements MethodCallHandler {
     private int sensorOrientation;
     private boolean isFrontFacing;
     private String cameraName;
+    private int videoEncodingBitRate;
+    private int videoFrameRate;
+    private int audioSamplingRate;
     private Size captureSize;
     private Size previewSize;
     private CaptureRequest.Builder captureRequestBuilder;
@@ -256,9 +269,19 @@ public class CameraPlugin implements MethodCallHandler {
     private MediaRecorder mediaRecorder;
     private boolean recordingVideo;
 
-    Camera(final String cameraName, final String resolutionPreset, @NonNull final Result result) {
+    Camera(
+        final String cameraName,
+        final String resolutionPreset,
+        final int videoEncodingBitRate,
+        final int videoFrameRate,
+        final int audioSamplingRate,
+        @NonNull final Result result) {
 
       this.cameraName = cameraName;
+      this.videoEncodingBitRate = videoEncodingBitRate;
+      this.videoFrameRate = videoFrameRate;
+      this.audioSamplingRate = audioSamplingRate;
+
       textureEntry = view.createSurfaceTexture();
 
       registerEventChannel();
@@ -382,7 +405,8 @@ public class CameraPlugin implements MethodCallHandler {
       } else {
         previewSize = goodEnough.get(0);
 
-        // Video capture size should not be greater than 1080 because MediaRecorder cannot handle higher resolutions.
+        // Video capture size should not be greater than 1080 because MediaRecorder cannot handle
+        // higher resolutions.
         videoSize = goodEnough.get(0);
         for (int i = goodEnough.size() - 1; i >= 0; i--) {
           if (goodEnough.get(i).getHeight() <= 1080) {
@@ -411,9 +435,9 @@ public class CameraPlugin implements MethodCallHandler {
       mediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
       mediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
       mediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
-      mediaRecorder.setVideoEncodingBitRate(1024 * 1000);
-      mediaRecorder.setAudioSamplingRate(16000);
-      mediaRecorder.setVideoFrameRate(27);
+      mediaRecorder.setVideoEncodingBitRate(this.videoEncodingBitRate);
+      mediaRecorder.setAudioSamplingRate(this.audioSamplingRate);
+      mediaRecorder.setVideoFrameRate(this.videoFrameRate);
       mediaRecorder.setVideoSize(videoSize.getWidth(), videoSize.getHeight());
       mediaRecorder.setOutputFile(outputFilePath);
 

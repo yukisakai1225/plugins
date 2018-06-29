@@ -178,13 +178,19 @@ class CameraValue {
 class CameraController extends ValueNotifier<CameraValue> {
   final CameraDescription description;
   final ResolutionPreset resolutionPreset;
+  final int videoEncodingBitRate;
+  final int videoFrameRate;
+  final int audioSamplingRate;
 
   int _textureId;
   bool _isDisposed = false;
   StreamSubscription<dynamic> _eventSubscription;
   Completer<Null> _creatingCompleter;
 
-  CameraController(this.description, this.resolutionPreset)
+  CameraController(this.description, this.resolutionPreset,
+      {this.videoEncodingBitRate: 1024 * 1000,
+      this.videoFrameRate: 27,
+      this.audioSamplingRate: 16000})
       : super(const CameraValue.uninitialized());
 
   /// Initializes the camera on the device.
@@ -201,6 +207,9 @@ class CameraController extends ValueNotifier<CameraValue> {
         <String, dynamic>{
           'cameraName': description.name,
           'resolutionPreset': serializeResolutionPreset(resolutionPreset),
+          'videoEncodingBitRate': videoEncodingBitRate,
+          'videoFrameRate': videoFrameRate,
+          'audioSamplingRate': audioSamplingRate
         },
       );
       _textureId = reply['textureId'];
