@@ -178,6 +178,7 @@ class CameraValue {
 class CameraController extends ValueNotifier<CameraValue> {
   final CameraDescription description;
   final ResolutionPreset resolutionPreset;
+  final double preferredAspectRatio;
   final int videoEncodingBitRate;
   final int videoFrameRate;
   final int audioSamplingRate;
@@ -188,7 +189,8 @@ class CameraController extends ValueNotifier<CameraValue> {
   Completer<Null> _creatingCompleter;
 
   CameraController(this.description, this.resolutionPreset,
-      {this.videoEncodingBitRate: 1024 * 1000,
+      {this.preferredAspectRatio: 0.0,
+      this.videoEncodingBitRate: 1024 * 1000,
       this.videoFrameRate: 27,
       this.audioSamplingRate: 16000})
       : super(const CameraValue.uninitialized());
@@ -207,6 +209,7 @@ class CameraController extends ValueNotifier<CameraValue> {
         <String, dynamic>{
           'cameraName': description.name,
           'resolutionPreset': serializeResolutionPreset(resolutionPreset),
+          'preferredAspectRatio': preferredAspectRatio,
           'videoEncodingBitRate': videoEncodingBitRate,
           'videoFrameRate': videoFrameRate,
           'audioSamplingRate': audioSamplingRate

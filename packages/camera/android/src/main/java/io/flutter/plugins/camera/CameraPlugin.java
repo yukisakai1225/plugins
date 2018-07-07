@@ -178,6 +178,7 @@ public class CameraPlugin implements MethodCallHandler {
         {
           String cameraName = call.argument("cameraName");
           String resolutionPreset = call.argument("resolutionPreset");
+          double preferredAspectRatio = call.argument("preferredAspectRatio");
           int videoEncodingBitRate = call.argument("videoEncodingBitRate");
           int videoFrameRate = call.argument("videoFrameRate");
           int audioSamplingRate = call.argument("audioSamplingRate");
@@ -188,6 +189,7 @@ public class CameraPlugin implements MethodCallHandler {
               new Camera(
                   cameraName,
                   resolutionPreset,
+                  preferredAspectRatio,
                   videoEncodingBitRate,
                   videoFrameRate,
                   audioSamplingRate,
@@ -259,6 +261,7 @@ public class CameraPlugin implements MethodCallHandler {
     private int sensorOrientation;
     private boolean isFrontFacing;
     private String cameraName;
+    private double preferredAspectRatio;
     private int videoEncodingBitRate;
     private int videoFrameRate;
     private int audioSamplingRate;
@@ -272,12 +275,14 @@ public class CameraPlugin implements MethodCallHandler {
     Camera(
         final String cameraName,
         final String resolutionPreset,
+        final double preferredAspectRatio,
         final int videoEncodingBitRate,
         final int videoFrameRate,
         final int audioSamplingRate,
         @NonNull final Result result) {
 
       this.cameraName = cameraName;
+      this.preferredAspectRatio = preferredAspectRatio;
       this.videoEncodingBitRate = videoEncodingBitRate;
       this.videoFrameRate = videoFrameRate;
       this.audioSamplingRate = audioSamplingRate;
@@ -300,6 +305,12 @@ public class CameraPlugin implements MethodCallHandler {
             break;
           default:
             throw new IllegalArgumentException("Unknown preset: " + resolutionPreset);
+        }
+
+        int displayRotation = activity.getWindowManager().getDefaultDisplay().getRotation();
+        int displayOrientation = ORIENTATIONS.get(displayRotation);
+        if (displayOrientation == 90 || displayOrientation == 270) {
+          minPreviewSize = new Size(minPreviewSize.getHeight(), minPreviewSize.getWidth());
         }
 
         CameraCharacteristics characteristics = cameraManager.getCameraCharacteristics(cameraName);
@@ -387,7 +398,11 @@ public class CameraPlugin implements MethodCallHandler {
     private void computeBestPreviewAndRecordingSize(
         StreamConfigurationMap streamConfigurationMap, Size minPreviewSize, Size captureSize) {
       Size[] sizes = streamConfigurationMap.getOutputSizes(SurfaceTexture.class);
-      float captureSizeRatio = (float) captureSize.getWidth() / captureSize.getHeight();
+      float captureSizeRatio =
+          (float)
+              (this.preferredAspectRatio == 0.0
+                  ? captureSize.getWidth() / captureSize.getHeight()
+                  : this.preferredAspectRatio);
       List<Size> goodEnough = new ArrayList<>();
       for (Size s : sizes) {
         if ((float) s.getWidth() / s.getHeight() == captureSizeRatio
@@ -409,7 +424,7 @@ public class CameraPlugin implements MethodCallHandler {
         // higher resolutions.
         videoSize = goodEnough.get(0);
         for (int i = goodEnough.size() - 1; i >= 0; i--) {
-          if (goodEnough.get(i).getHeight() <= 1080) {
+          if (Math.min(goodEnough.get(i).getHeight(), goodEnough.get(i).getWidth()) <= 1080) {
             videoSize = goodEnough.get(i);
             break;
           }
