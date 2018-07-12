@@ -69,6 +69,7 @@ public class CameraPlugin implements MethodCallHandler {
   // The code to run after requesting camera permissions.
   private Runnable cameraPermissionContinuation;
   private boolean requestingPermission;
+  private String videoFilePath;
 
   private CameraPlugin(Registrar registrar, FlutterView view, Activity activity) {
     this.registrar = registrar;
@@ -204,12 +205,13 @@ public class CameraPlugin implements MethodCallHandler {
       case "startVideoRecording":
         {
           final String filePath = call.argument("filePath");
+          videoFilePath = filePath;
           camera.startVideoRecording(filePath, result);
           break;
         }
       case "stopVideoRecording":
         {
-          camera.stopVideoRecording(result);
+          camera.stopVideoRecording(videoFilePath, result);
           break;
         }
       case "dispose":
@@ -682,7 +684,7 @@ public class CameraPlugin implements MethodCallHandler {
       }
     }
 
-    private void stopVideoRecording(@NonNull final Result result) {
+    private void stopVideoRecording(String filePath, @NonNull final Result result) {
       if (!recordingVideo) {
         result.success(null);
         return;
@@ -692,9 +694,80 @@ public class CameraPlugin implements MethodCallHandler {
         recordingVideo = false;
         mediaRecorder.stop();
         mediaRecorder.reset();
+
+        // SAMSUNG FREEZE FIX START
+        DataSource channel = new FileDataSourceImpl(filePath);
+        IsoFile isoFile = new IsoFile(channel);
+
+        List<TrackBox> trackBoxes = isoFile.getMovieBox().getBoxes(TrackBox.class);
+        boolean sampleError = false;
+        for (TrackBox trackBox : trackBoxes) {
+            TimeToSampleBox.Entry firstEntry = trackBox.getMediaBox().getMediaInformationBox().getSampleTableBox().getTimeToSampleBox().getEntries().get(0);
+
+            if (trackBox.getMediaBox().getMediaInformationBox().getSampleTableBox().getTimeToSampleBox().getEntries().size() > 1) {
+                TimeToSampleBox.Entry secondEntry = trackBox.getMediaBox().getMediaInformationBox().getSampleTableBox().getTimeToSampleBox().getEntries().get(1);
+                long firstDelta = firstEntry.getDelta();
+                long secondDelta = secondEntry.getDelta();
+                if (firstDelta > secondDelta+10000) {
+                    sampleError = true;
+                    firstEntry.setDelta(secondDelta);
+                }
+            }
+        }
+
+        if(sampleError) {
+            Movie movie = new Movie();
+            Mp4TrackImpl audioTrack = null;
+            Mp4TrackImpl videoTrack = null;
+            long audioDuration = 0;
+            long videoDuration = 0;
+            for (TrackBox trackBox : trackBoxes) {
+                if (trackBox.getTrackHeaderBox().getVolume() > 0) {
+                    audioTrack = new Mp4TrackImpl(channel.toString() + "[" + trackBox.getTrackHeaderBox().getTrackId() + "]" , trackBox);
+                    audioDuration = trackBox.getTrackHeaderBox().getDuration();
+                } else {
+                    videoTrack = new Mp4TrackImpl(channel.toString() + "[" + trackBox.getTrackHeaderBox().getTrackId() + "]" , trackBox);
+                    videoDuration = trackBox.getTrackHeaderBox().getDuration();
+                }
+            }
+            
+            if (audioTrack != null && videoTrack != null) {
+                int numAudioSamples = audioTrack.getSamples().size();
+                long audioSampleLength = audioDuration/numAudioSamples;
+
+                if (audioDuration > videoDuration && audioDuration-videoDuration >= audioSampleLength) {
+                    int removeSamples = 0;
+                    for (int i = 1; i < numAudioSamples; i++) {
+                        long newAudioLength = (numAudioSamples-i)*audioSampleLength;
+                        if (newAudioLength >= videoDuration && (newAudioLength-videoDuration) < audioSampleLength) {
+                            removeSamples = i;
+                            break;
+                        }
+                    }
+                    CroppedTrack croppedAudio = new CroppedTrack(audioTrack, removeSamples, numAudioSamples);
+                    movie.addTrack(videoTrack);
+                    movie.addTrack(croppedAudio);
+                } else {
+                    movie.addTrack(videoTrack);
+                    movie.addTrack(audioTrack);
+                }
+
+                movie.setMatrix(isoFile.getMovieBox().getMovieHeaderBox().getMatrix());
+                Container out = new DefaultMp4Builder().build(movie);
+
+                File oldVideo = new File(filePath);
+                oldVideo.delete();
+
+                FileChannel fc = new RandomAccessFile(filePath, "rw").getChannel();
+                out.writeContainer(fc);
+                fc.close();
+            }
+        }
+        // SAMSUNG FREEZE FIX END
+
         startPreview();
         result.success(null);
-      } catch (CameraAccessException | IllegalStateException e) {
+      } catch (CameraAccessException | IllegalStateException | IOException e) {
         result.error("videoRecordingFailed", e.getMessage(), null);
       }
     }
