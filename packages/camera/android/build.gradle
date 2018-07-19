@@ -33,6 +33,6 @@ android {
     }
     dependencies {
         implementation 'com.android.support:support-annotations:27.1.1'
-        compile 'com.googlecode.mp4parser:isoparser:1.1.21'
+        implementation 'com.googlecode.mp4parser:isoparser:1.1.21'
     }
 }
