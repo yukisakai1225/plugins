@@ -6,6 +6,7 @@ import android.app.Application;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.graphics.ImageFormat;
+import android.graphics.Rect;
 import android.graphics.SurfaceTexture;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
@@ -15,6 +16,8 @@ import android.hardware.camera2.CameraManager;
 import android.hardware.camera2.CameraMetadata;
 import android.hardware.camera2.CaptureFailure;
 import android.hardware.camera2.CaptureRequest;
+import android.hardware.camera2.TotalCaptureResult;
+import android.hardware.camera2.params.MeteringRectangle;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.Image;
 import android.media.ImageReader;
@@ -48,6 +51,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.lang.Math;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
@@ -224,6 +228,19 @@ public class CameraPlugin implements MethodCallHandler {
       case "stopVideoRecording":
         {
           camera.stopVideoRecording(videoFilePath, result);
+          break;
+        }
+      case "focusCamera":
+        {
+          double touchX = call.argument("x");
+          double touchY = call.argument("y");
+          double width = call.argument("width");
+          double height = call.argument("height");
+          try {
+            camera.focusCamera(touchX, touchY, width, height, result);
+          } catch(CameraAccessException e) {
+            result.error("CameraAccessException", e.getMessage(), null);
+          }
           break;
         }
       case "dispose":
@@ -782,6 +799,71 @@ public class CameraPlugin implements MethodCallHandler {
       } catch (CameraAccessException | IllegalStateException | IOException e) {
         result.error("videoRecordingFailed", e.getMessage(), null);
       }
+    }
+
+    private void focusCamera(double touchX, double touchY, double width, double height, @NonNull final Result result) throws CameraAccessException {
+      CameraCharacteristics characteristics = cameraManager.getCameraCharacteristics(cameraName);
+      final Rect sensorSize = characteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE);
+      final int y = (int)(touchX/width*(double)(sensorSize.height()));
+      final int x = (int)(touchY/height*(double)(sensorSize.width()));
+      final int touchWidth = 100;
+      final int touchHeight = 100;
+      MeteringRectangle focusRect = new MeteringRectangle(
+        Math.max(x - touchWidth/2, 0),
+        Math.max(y - touchHeight/2, 0),
+        touchWidth,
+        touchHeight,
+        MeteringRectangle.METERING_WEIGHT_MAX - 1
+      );
+
+      CameraCaptureSession.CaptureCallback captureCallbackHandler = new CameraCaptureSession.CaptureCallback() {
+        @Override
+        public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
+          super.onCaptureCompleted(session, request, result);
+          if (request.getTag() == "FOCUS_TAG") {
+            captureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, null);
+            try {
+              cameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), null, null);
+            } catch(CameraAccessException e) {
+              sendErrorEvent(e.getMessage());
+            }
+          }
+        }
+
+        @Override
+        public void onCaptureFailed(CameraCaptureSession session, CaptureRequest request, CaptureFailure failure) {
+          super.onCaptureFailed(session, request, failure);
+          String reason;
+          switch (failure.getReason()) {
+            case CaptureFailure.REASON_ERROR:
+              reason = "An error happened in the framework";
+              break;
+            case CaptureFailure.REASON_FLUSHED:
+              reason = "The capture has failed due to an abortCaptures() call";
+              break;
+            default:
+              reason = "Unknown reason";
+          }
+          sendErrorEvent(reason);
+          result.error("captureFailure", reason, null);
+        }
+      };
+
+      cameraCaptureSession.stopRepeating();
+      captureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CameraMetadata.CONTROL_MODE_AUTO);
+      captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF);
+      cameraCaptureSession.capture(captureRequestBuilder.build(), captureCallbackHandler, null);
+
+      if (characteristics.get(CameraCharacteristics.CONTROL_MAX_REGIONS_AF) >= 1) {
+        captureRequestBuilder.set(CaptureRequest.CONTROL_AF_REGIONS, new MeteringRectangle[]{focusRect});
+      }
+      captureRequestBuilder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
+      captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
+      captureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CameraMetadata.CONTROL_AF_TRIGGER_START);
+      captureRequestBuilder.setTag("FOCUS_TAG");
+
+      cameraCaptureSession.capture(captureRequestBuilder.build(), captureCallbackHandler, null);
+      result.success(null);
     }
 
     private void startPreview() throws CameraAccessException {

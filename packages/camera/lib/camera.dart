@@ -347,6 +347,14 @@ class CameraController extends ValueNotifier<CameraValue> {
     }
   }
 
+  /// Focus camera from the position of a tap
+  Future<Null> focusCamera(double x, double y, double width, double height) async {
+    await _channel.invokeMethod(
+      'focusCamera',
+      <String, dynamic>{'x': x, 'y': y, 'width': width, 'height': height}
+    );
+  }
+
   /// Releases the resources of this camera.
   @override
   Future<Null> dispose() async {
