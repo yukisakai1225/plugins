@@ -89,6 +89,7 @@
 - (void)startVideoRecordingAtPath:(NSString *)path result:(FlutterResult)result;
 - (void)stopVideoRecordingWithResult:(FlutterResult)result;
 - (void)captureToFile:(NSString *)filename result:(FlutterResult)result;
+- (void)focusCamera:(NSNumber *)touchX touchY:(NSNumber *)touchY width:(NSNumber *)width height:(NSNumber *)height result:(FlutterResult)result;
 @end
 
 @implementation FLTCam
@@ -396,6 +397,19 @@
     }
   }
 }
+- (void)focusCamera:(NSNumber *)touchX touchY:(NSNumber *)touchY width:(NSNumber *)width height:(NSNumber *)height result:(FlutterResult)result {
+  if ([_captureDevice isFocusPointOfInterestSupported]) {
+    float y = [touchX floatValue] / [width floatValue];
+    float x = [touchY floatValue] / [height floatValue];
+    [_captureDevice lockForConfiguration:nil];
+    [_captureDevice setFocusPointOfInterest:CGPointMake(x,y)];
+    [_captureDevice setFocusMode:AVCaptureFocusModeContinuousAutoFocus];
+    [_captureDevice unlockForConfiguration];
+    result(nil);
+  } else {
+    result([FlutterError errorWithCode:@"FocusError" message:@"Focus not supported" details:nil]);
+  }
+}
 @end
 
 @interface CameraPlugin ()
@@ -504,6 +518,8 @@
       [_camera startVideoRecordingAtPath:call.arguments[@"filePath"] result:result];
     } else if ([@"stopVideoRecording" isEqualToString:call.method]) {
       [_camera stopVideoRecordingWithResult:result];
+    } else if ([@"focusCamera" isEqualToString:call.method]) {
+      [_camera focusCamera:call.arguments[@"x"] touchY:call.arguments[@"y"] width:call.arguments[@"width"] height:call.arguments[@"height"] result:result];
     } else {
       result(FlutterMethodNotImplemented);
     }
